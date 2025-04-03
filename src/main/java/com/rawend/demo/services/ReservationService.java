@@ -11,6 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.DayOfWeek;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -23,6 +24,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -52,6 +56,8 @@ public class ReservationService {
     
     @Autowired
     private AffectationTechnicienRepository affectationTechnicienRepository;
+    private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
+
    
     private DayOfWeek convertJourReposToDayOfWeek(JourRepos jourRepos) {
         switch (jourRepos) {
@@ -65,6 +71,8 @@ public class ReservationService {
             default: return null;
         }
     }
+  
+
     public Map<String, Object> createReservation(ReservationRequest request, Authentication authentication) {
 
         String email = authentication.getName();
@@ -115,7 +123,7 @@ public class ReservationService {
 
         ReservationEntity reservation = new ReservationEntity();
         reservation.setUser(user);
-        reservation.setStatus(ReservationStatus.EN_ATTENTE); // Définition explicite
+        reservation.setStatus(ReservationStatus.EN_ATTENTE); 
         reservation.setService(service);
         reservation.setPrix(prixFinal);
         reservation.setDuree(duree);
@@ -126,10 +134,8 @@ public class ReservationService {
         reservation.setEmail(email);
         reservation.setPhone(user.getPhone());
         reservation.setTitreService(service.getTitre());
-    
-
         ReservationEntity savedReservation = reservationRepository.save(reservation);
-
+        scheduleNotificationReminders(savedReservation);
         Map<String, Object> response = new HashMap<>();
         response.put("reservationId", savedReservation.getId());
         response.put("userEmail", savedReservation.getEmail());
@@ -146,6 +152,72 @@ public class ReservationService {
 
         return response;
     }
+    private void scheduleNotificationReminders(ReservationEntity reservation) {
+        LocalDate nowDate = LocalDate.now();
+        LocalDateTime nowDateTime = LocalDateTime.now();
+        LocalDate reservationDate = reservation.getDateReservation().toLocalDate();
+        LocalDate creationDate = reservation.getDateCreation().toLocalDate();
+        
+        String userEmail = reservation.getUser().getEmail();
+        String serviceTitle = reservation.getTitreService();
+
+        // 1. Rappel 7 jours avant
+        if (!creationDate.isAfter(reservationDate.minusDays(7))) {
+            LocalDate reminder7dDate = reservationDate.minusDays(7);
+            if (reminder7dDate.isAfter(nowDate)) {
+                scheduleReminderAtFixedTime(userEmail, serviceTitle, reservation.getDateReservation(), 
+                                          reminder7dDate.atTime(8, 0), "7 jours avant");
+            } else {
+                sendReminder(userEmail, serviceTitle, reservation.getDateReservation(), "7 jours avant");
+            }
+        }
+
+        // 2. Rappel 48h avant (converti en 2 jours)
+        if (!creationDate.isAfter(reservationDate.minusDays(2))) {
+            LocalDate reminder2dDate = reservationDate.minusDays(2);
+            if (reminder2dDate.isAfter(nowDate)) {
+                scheduleReminderAtFixedTime(userEmail, serviceTitle, reservation.getDateReservation(),
+                                         reminder2dDate.atTime(8, 0), "48 heures avant");
+            } else {
+                sendReminder(userEmail, serviceTitle, reservation.getDateReservation(), "48 heures avant");
+            }
+        }
+
+        // 3. Rappel 2h avant (gestion précise)
+        LocalDateTime reminder2h = reservation.getDateReservation().minusHours(2);
+        if (reservation.getDateCreation().isBefore(reminder2h)) {
+            if (reminder2h.isAfter(nowDateTime)) {
+                scheduleReminderAtFixedTime(userEmail, serviceTitle, reservation.getDateReservation(),
+                                         reminder2h, "2 heures avant");
+            } else {
+                sendReminder(userEmail, serviceTitle, reservation.getDateReservation(), "2 heures avant");
+            }
+        }
+    }
+
+    private void scheduleReminderAtFixedTime(String email, String service, LocalDateTime reservationDateTime,
+                                           LocalDateTime reminderTime, String reminderType) {
+        long delay = Duration.between(LocalDateTime.now(), reminderTime).toMillis();
+        scheduler.schedule(() -> 
+            sendReminder(email, service, reservationDateTime, reminderType),
+            delay,
+            TimeUnit.MILLISECONDS
+        );
+        log.info("Rappel {} planifié pour {}", reminderType, reminderTime);
+    }
+
+    private void sendReminder(String email, String service, LocalDateTime date, String reminderType) {
+        String message = String.format(
+            "⏰ Rappel (%s) : '%s' prévu le %s",
+            reminderType,
+            service,
+            date.format(DateTimeFormatter.ofPattern("dd/MM à HH:mm"))
+        );
+        notificationService.sendNotificationToUser(email, message);
+        log.info("Notification envoyée : {}", message);
+    }
+
+    
     private LocalDateTime convertToLocalDateTime(Date date) {
         return date.toInstant().atZone(ZoneId.systemDefault()).toLocalDateTime();
     }
@@ -178,7 +250,7 @@ public class ReservationService {
 
         if (dateDebut.toLocalTime().isBefore(heureDebutTravail) || dateFin.toLocalTime().isAfter(heureFinTravail)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "La reservation depasse les horaires de travail du technicien (" + heureDebutTravail + " - " + heureFinTravail + ")");
+                    "La réservation dépasse les horaires de travail du technicien (" + heureDebutTravail + " - " + heureFinTravail + ")");
         }
 
        
@@ -193,7 +265,7 @@ public class ReservationService {
         if (hasConflict) {
         	throw new ResponseStatusException(
         		    HttpStatus.BAD_REQUEST,
-        		    "Le technicien a  une reservation entre " + formattedDateDebut + " et " + formattedDateFin);}
+        		    "Le technicien a  une réservation entre " + formattedDateDebut + " et " + formattedDateFin);}
 
         
         List<AffectationTechnicien> affectations = affectationTechnicienRepository.findByReservationId(reservationId);
@@ -254,12 +326,27 @@ public class ReservationService {
 
             // Notification aux admins
             String message = String.format(
-                "Réservation #%d terminée\nService: %s\nClient: %s\nTechnicien: %s\nTerminée le: %s",
+                "Réservation: %d terminée\n du Service: %s\n Client: %s\n Technicien: %s\n Terminée le: %s",
                 reservation.getId(),
                 reservation.getTitreService(),
                 reservation.getUser().getUsername(),
                 technicien.getUser().getUsername(),
                 LocalDateTime.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm"))
+            );
+            // Notification à l'utilisateur
+            String userMessage = String.format(
+                "Votre réservation a été terminée\n" +
+                "de Service: %s\n" +
+                "Merci pour votre confiance !",
+              
+                reservation.getTitreService(),
+                technicien.getUser().getUsername(),
+                LocalDateTime.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm"))
+            );
+            
+            notificationService.sendNotificationToUser(
+                reservation.getUser().getEmail(), 
+                userMessage
             );
 
             notificationService.sendNotificationToAdmins(message);

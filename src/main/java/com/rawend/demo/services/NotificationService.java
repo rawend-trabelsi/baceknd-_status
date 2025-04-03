@@ -46,7 +46,23 @@ public class NotificationService {
             messagingTemplate.convertAndSend("/topic/notifications/" + adminEmail, notification);
         }
     }
-
+    public void sendNotificationToUser(String userEmail, String message) {
+        try {
+            // Créer et sauvegarder la notification
+            Notification notification = new Notification(userEmail, message);
+            notification = notificationRepository.save(notification);
+            
+            // Envoyer via WebSocket
+            messagingTemplate.convertAndSend("/topic/notifications/" + userEmail, notification);
+            
+            // Log de confirmation
+            System.out.println("Notification envoyée à " + userEmail + " : " + message);
+        } catch (Exception e) {
+            // Gestion des erreurs
+            System.err.println("Échec d'envoi de notification à " + userEmail);
+            e.printStackTrace();
+        }
+    }
     public Long countUnreadNotifications(String userEmail) {
         return notificationRepository.countByUserEmailAndIsReadFalse(userEmail);
     }

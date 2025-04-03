@@ -111,8 +111,8 @@ public class ReservationController {
         String dateFinStr = dateFin.format(formatter);
 
         // --- Création du message de notification ---
-        String notificationMessage = "Vous avez une nouvelle reservation " +
-                                     " pour le service: " + response.get("serviceTitre") +
+        String notificationMessage = "Vous avez une nouvelle réservation: " + response.get("reservationId") + 
+                " pour le service: " + response.get("serviceTitre")  +
                                      " prévue du " + dateDebutStr +
                                      " au " + dateFinStr + ".";
 
@@ -320,7 +320,7 @@ public class ReservationController {
                 .format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm"));
 
 
-        String newTechNotificationMessage = "vous avez une nouvelle reservation "  +
+        String newTechNotificationMessage = "vous avez une nouvelle réservation "  +
                 " prévue du " + dateDebut + " au " + dateFin + ".";
 
         Notification newTechNotification = notificationService.createNotification(emailTechnicien, newTechNotificationMessage);
@@ -329,7 +329,7 @@ public class ReservationController {
         
         if (oldTechnicienOpt.isPresent()) {
             String oldTechnicienEmail = oldTechnicienOpt.get().getEmail();
-            String oldTechNotificationMessage = "Votre affectation à la reservation " +
+            String oldTechNotificationMessage = "Votre affectation à la réservation " +
                     " prévue du " + dateDebut + " au " + dateFin + " est  annulée.";
 
             Notification oldTechNotification = notificationService.createNotification(oldTechnicienEmail, oldTechNotificationMessage);
@@ -385,8 +385,8 @@ public class ReservationController {
                 .format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm"));
 
         // Message de notification avec date de début et de fin
-        String notificationMessage = "Vous avez ete affecte a la reservation "  +
-                " planifiee de " + reservation.getDateReservation().format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm")) +
+        String notificationMessage = "Vous avez été affecté à la réservation "  +
+                "planifiée de " + reservation.getDateReservation().format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm")) +
                 " à" + dateFin + ".";
 
 
@@ -442,6 +442,7 @@ public class ReservationController {
             reservationDetails.put("phone", reservation.getPhone());
             reservationDetails.put("duree", reservation.getDuree());
             reservationDetails.put("modePaiement", reservation.getModePaiement());
+            reservationDetails.put("status", reservation.getStatus());
 
             Long technicienId = reservation.getTechnicienId();
             System.out.println("technicienId: " + technicienId);  // Log pour déboguer
@@ -498,6 +499,7 @@ public class ReservationController {
             reservationDetails.put("phone", reservation.getPhone());
             reservationDetails.put("duree", reservation.getDuree());
             reservationDetails.put("modePaiement", reservation.getModePaiement());
+            reservationDetails.put("status", reservation.getStatus());
 
             reservationsList.add(reservationDetails);
         }
