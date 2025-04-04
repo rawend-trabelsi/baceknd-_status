@@ -10,6 +10,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.DayOfWeek;
 import java.time.Duration;
 import java.time.LocalDate;
@@ -58,7 +60,10 @@ public class ReservationService {
     private AffectationTechnicienRepository affectationTechnicienRepository;
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
 
-   
+    public List<ReservationEntity> getReservationsByClientEmail(String email) {
+        return reservationRepository.findByUserEmailOrderByDateCreationDesc(email);
+    }
+    
     private DayOfWeek convertJourReposToDayOfWeek(JourRepos jourRepos) {
         switch (jourRepos) {
             case LUNDI: return DayOfWeek.MONDAY;
@@ -72,7 +77,14 @@ public class ReservationService {
         }
     }
   
-
+ // Dans ReservationService.java
+    public ReservationEntity getReservationByIdAndEmail(Long reservationId, String email) {
+        return reservationRepository.findByIdAndUserEmail(reservationId, email)
+            .orElseThrow(() -> new ResponseStatusException(
+                HttpStatus.NOT_FOUND, 
+                "Réservation non trouvée ou accès non autorisé"
+            ));
+    }
     public Map<String, Object> createReservation(ReservationRequest request, Authentication authentication) {
 
         String email = authentication.getName();
@@ -125,7 +137,12 @@ public class ReservationService {
         reservation.setUser(user);
         reservation.setStatus(ReservationStatus.EN_ATTENTE); 
         reservation.setService(service);
-        reservation.setPrix(prixFinal);
+     // Formatage du prix avant l'insertion
+        double prixArrondi = BigDecimal.valueOf(prixFinal)
+                                       .setScale(3, RoundingMode.HALF_UP)
+                                       .doubleValue();
+
+        reservation.setPrix(prixArrondi); 
         reservation.setDuree(duree);
         reservation.setModePaiement(request.modePaiement());
         reservation.setLocalisation(request.localisation());
@@ -141,7 +158,7 @@ public class ReservationService {
         response.put("userEmail", savedReservation.getEmail());
         response.put("userPhone", savedReservation.getPhone());
         response.put("serviceTitre", savedReservation.getTitreService());
-        response.put("prixFinal", savedReservation.getPrix());
+        response.put("prixFinal", String.format("%.3f", savedReservation.getPrix()));
         response.put("modePaiement", savedReservation.getModePaiement());
         response.put("duree", savedReservation.getDuree());
         response.put("localisation", savedReservation.getLocalisation());
@@ -464,7 +481,7 @@ public class ReservationService {
     }
 
     private LocalDateTime calculateDateFin(LocalDateTime dateDebut, String duree) {
-        // Format: 2h30min
+       
         Pattern pattern = Pattern.compile("(\\d+)h(\\d+)min");
         Matcher matcher = pattern.matcher(duree);
         
@@ -474,7 +491,7 @@ public class ReservationService {
             return dateDebut.plusHours(heures).plusMinutes(minutes);
         }
         
-        // Format: 150min
+      
         pattern = Pattern.compile("(\\d+)min");
         matcher = pattern.matcher(duree);
         

@@ -47,13 +47,12 @@ public class ReservationEntity {
     private ReservationStatus status = ReservationStatus.EN_ATTENTE;
 
     @PrePersist
-    public void prePersist() {
-        this.dateCreation = LocalDateTime.now();
-        
+    @PreUpdate
+    public void initStatus() {
         if (this.status == null) {
             this.status = ReservationStatus.EN_ATTENTE;
         }
-        
+    
         if (this.service != null) {
             this.titreService = this.service.getTitre(); 
         }

@@ -527,7 +527,79 @@ public class ReservationController {
         return ResponseEntity.ok(reservationService.getCreneauxIndisponiblesComplets());
     }
 
-  
-    
+    @PreAuthorize("hasRole('USER')")
+    @GetMapping("/client/historique")
+    public ResponseEntity<List<Map<String, Object>>> getHistoriqueClient(Authentication authentication) {
+        String email = authentication.getName();
+        List<ReservationEntity> reservations = reservationService.getReservationsByClientEmail(email);
+        
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
 
+        List<Map<String, Object>> response = reservations.stream()
+            .sorted(Comparator.comparing(ReservationEntity::getDateCreation).reversed())
+            .map(reservation -> {
+                Map<String, Object> map = new HashMap<>();
+                map.put("id", reservation.getId());
+                map.put("service", reservation.getTitreService());
+                map.put("date", reservation.getDateReservation().format(formatter));
+                map.put("statut", reservation.getStatus().toString());
+                map.put("prix", String.format("%.2f DT", reservation.getPrix()));
+                return map;
+            })
+            .collect(Collectors.toList());
+
+        return ResponseEntity.ok(response);
+    }
+    private String getTechnicienName(Long technicienId) {
+        if (technicienId == null) return "Non affecté";
+        return technicienEmploiRepository.findById(technicienId)
+            .map(TechnicienEmploi::getUsername)
+            .orElse("Technicien inconnu");
+    }
+    
+ // Dans ReservationController.java
+
+    @PreAuthorize("hasRole('USER')")
+    @GetMapping("/client/{reservationId}")
+    public ResponseEntity<?> getReservationDetails(
+        @PathVariable Long reservationId,
+        Authentication authentication) {
+        
+        try {
+            String email = authentication.getName();
+            ReservationEntity reservation = reservationService.getReservationByIdAndEmail(reservationId, email);
+            
+            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("id", reservation.getId());
+            response.put("service", reservation.getTitreService());
+            response.put("statut", reservation.getStatus());
+            response.put("prix", String.format("%.2f DT", reservation.getPrix()));
+            response.put("dateReservation", reservation.getDateReservation().format(formatter));
+            response.put("duree", reservation.getDuree());
+            response.put("localisation", reservation.getLocalisation());
+            response.put("modePaiement", reservation.getModePaiement().name());
+            response.put("dateCreation", reservation.getDateCreation().format(formatter));
+            
+            // Détails technicien
+            if(reservation.getTechnicienId() != null) {
+                Optional<TechnicienEmploi> technicien = technicienEmploiRepository.findById(reservation.getTechnicienId());
+                if(technicien.isPresent()) {
+                    Map<String, String> techDetails = new HashMap<>();
+                    techDetails.put("nom", technicien.get().getUsername());
+                    techDetails.put("email", technicien.get().getEmail());
+                    techDetails.put("telephone", technicien.get().getPhone());
+                    response.put("technicien", techDetails);
+                }
+            }
+            
+            return ResponseEntity.ok(response);
+            
+        } catch (ResponseStatusException e) {
+            return ResponseEntity.status(e.getStatusCode()).body(e.getReason());
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body("Erreur lors de la récupération des détails");
+        }
+    }
 }
